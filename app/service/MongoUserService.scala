@@ -1,5 +1,6 @@
 package service
 
+import _root_.java.util.Date
 import securesocial.core._
 import play.api.{Logger,Application}
 import securesocial.core.providers.Token
@@ -13,6 +14,7 @@ import play.api.mvc.Controller
 import play.modules.reactivemongo.json.collection.JSONCollection
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import reactivemongo.core.commands.GetLastError
 
 /**
  * Created with IntelliJ IDEA.
@@ -22,10 +24,9 @@ import scala.concurrent.duration._
  * To change this template use File | Settings | File Templates.
  */
 class MongoUserService(application: Application) extends UserServicePlugin(application) with Controller with MongoController{
-  private var users = Map[String, Identity]()
-  private var tokens = Map[String, Token]()
   def collection: JSONCollection = db.collection[JSONCollection]("users")
-
+  def tokens: JSONCollection = db.collection[JSONCollection]("tokens")
+  private var tokens1 = Map[String, Token]()
   val outPutUser = (__ \ "id").json.prune
 
   def retIdentity(json : JsObject) : Identity = {
@@ -43,7 +44,7 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
     println("salt : "+ salt)
     val authmethod = ( json \ "authmethod").as[String]
 
-    val identity : IdentityId = new IdentityId("shrikar84@gmail.com","userpass")
+    val identity : IdentityId = new IdentityId(userid,authmethod)
     val authMethod : AuthenticationMethod = new AuthenticationMethod(authmethod)
     val pwdInfo: PasswordInfo = new PasswordInfo(hash,password)
     val user : SocialUser = new SocialUser(identity,firstname,lastname,firstname,Some(email),Some(avatar),authMethod,None,None,Some(pwdInfo))
@@ -53,32 +54,30 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
   def findByEmailAndProvider(email: String, providerId: String): Option[Identity] = {
     println("#### wtf  " + email + " " + providerId)
     val cursor  = collection.find(Json.obj("userid"->email,"provider"->providerId)).cursor[JsObject]
-    val x = cursor.headOption.map{
+    val futureuser = cursor.headOption.map{
       case Some(user) => user
       case None => false
     }
-    val jobj = Await.result(x, 5 seconds).asInstanceOf[JsObject]
-    Some(retIdentity(jobj))
-    //users.values.find( u => u.email.map( e => e == email && u.identityId.providerId == providerId).getOrElse(false))
+    val jobj = Await.result(futureuser, 5 seconds)
+    jobj match {
+      case x : Boolean => None
+      case _  => Some(retIdentity(jobj.asInstanceOf[JsObject]))
+
+    }
   }
 
   def save(user: Identity): Identity = {
-    users = users + (user.identityId.userId + user.identityId.providerId -> user)
-//    println("User id " + user.identityId.userId)
-//    println("Provider " + user.identityId.providerId)
-//    println("FirstNAme " + user.firstName)
+
     val email = user.email match {
       case Some(email) => email
       case _ => "N/A"
     }
-//    println("email :" + email)
-//    println("Avatar : " + user.avatarUrl)
+
     val avatar = user.avatarUrl match{
       case Some(url) => url
       case _ => "N/A"
     }
-//    println("Authentication method :" + user.authMethod.method)
-//    println("Password :" + user.passwordInfo.get.hasher + " " + user.passwordInfo.get.password + " " + user.passwordInfo.get.salt)
+
     val savejson = Json.obj(
       "userid" -> user.identityId.userId,
       "provider" -> user.identityId.providerId,
@@ -87,33 +86,39 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
       "email" -> email,
       "avatar" -> avatar,
       "authmethod" -> user.authMethod.method,
-      "password" -> Json.obj("hasher" -> user.passwordInfo.get.hasher, "password" -> user.passwordInfo.get.password, "salt" -> user.passwordInfo.get.salt)
+      "password" -> Json.obj("hasher" -> user.passwordInfo.get.hasher, "password" -> user.passwordInfo.get.password, "salt" -> user.passwordInfo.get.salt),
+      "created_at" -> Json.obj("$date" -> new Date()),
+      "updated_at" -> Json.obj("$date" -> new Date())
     )
     println(Json.toJson(savejson))
     collection.insert(savejson)
+    //collection.update(Json.obj("userid"->user.identityId.userId,"provider"->user.identityId.providerId),savejson, new GetLastError(),true,false)
     user
   }
 
   def find(id: IdentityId): Option[Identity] = {
-    println("wtf finding user " + id.toString)
-    val cursor  = collection.find(Json.obj("userid"->id.userId,"provider"->id.providerId)).cursor[JsObject]
-    val x = cursor.headOption.map{
-      case Some(user) => user
-      case None => false
-    }
-    val jobj = Await.result(x, 5 seconds).asInstanceOf[JsObject]
-    println(jobj)
-    Some(retIdentity(jobj))
+   findByEmailAndProvider(id.userId,id.providerId)
   }
 
   def save(token: Token) {
-    tokens += (token.uuid -> token)
+    tokens1 += (token.uuid -> token)
+    //tokens.save(Json.obj("uuid"->token.uuid,"token"->token))
     println("Holy crap saving token  : " + token)
   }
 
   def findToken(token: String): Option[Token] = {
      println("Holy crap finding token : " + token)
-      tokens.get(token)
+//     val cursor  = collection.find(Json.obj("uuid"->token)).cursor[JsObject]
+//      val futureuser = cursor.headOption.map{
+//        case Some(user) => user
+//        case None => false
+//     }
+//      val jobj = Await.result(futureuser, 5 seconds)
+//      jobj match {
+//        case x : Boolean => None
+//        case _  => Some(jobj.asInstanceOf[Token])
+//      }
+    tokens1.get(token)
   }
 
   def deleteToken(uuid: String) {}
