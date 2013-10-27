@@ -34,7 +34,6 @@
         @if( externalProviders.size > 0 ) {
             <div class="clearfix">
                 <h3>@Messages("securesocial.login.instructions")</h3>
-                <h2>Awesomeness!!!</h2>
                 <p>
                     @for(p <- externalProviders) {
                         @provider(p.id)(request)
