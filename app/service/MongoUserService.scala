@@ -15,6 +15,9 @@ import play.modules.reactivemongo.json.collection.JSONCollection
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import reactivemongo.core.commands.GetLastError
+import scala.util.parsing.json.JSONObject
+import org.joda.time.DateTime
+import org.joda.time.format.{DateTimeFormatter, DateTimeFormat}
 
 /**
  * Created with IntelliJ IDEA.
@@ -41,7 +44,6 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
     val password = ( json \ "password" \ "password").as[String]
     println("password : "+ password)
     val salt = (json \ "password" \ "salt").asOpt[String]
-    println("salt : "+ salt)
     val authmethod = ( json \ "authmethod").as[String]
 
     val identity : IdentityId = new IdentityId(userid,authmethod)
@@ -52,7 +54,6 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
   }
 
   def findByEmailAndProvider(email: String, providerId: String): Option[Identity] = {
-    println("#### wtf  " + email + " " + providerId)
     val cursor  = collection.find(Json.obj("userid"->email,"provider"->providerId)).cursor[JsObject]
     val futureuser = cursor.headOption.map{
       case Some(user) => user
@@ -92,7 +93,6 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
     )
     println(Json.toJson(savejson))
     collection.insert(savejson)
-    //collection.update(Json.obj("userid"->user.identityId.userId,"provider"->user.identityId.providerId),savejson, new GetLastError(),true,false)
     user
   }
 
@@ -102,23 +102,39 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
 
   def save(token: Token) {
     tokens1 += (token.uuid -> token)
-    //tokens.save(Json.obj("uuid"->token.uuid,"token"->token))
-    println("Holy crap saving token  : " + token)
+    val tokentosave = Json.obj(
+      "uuid" -> token.uuid,
+      "email" -> token.email,
+      "creation_time" -> Json.obj("$date" -> token.creationTime),
+      "expiration_time" -> Json.obj("$date" -> token.expirationTime),
+      "isSignUp" -> token.isSignUp
+    )
+    tokens.save(tokentosave)
   }
 
+
+
   def findToken(token: String): Option[Token] = {
-     println("Holy crap finding token : " + token)
-//     val cursor  = collection.find(Json.obj("uuid"->token)).cursor[JsObject]
-//      val futureuser = cursor.headOption.map{
-//        case Some(user) => user
-//        case None => false
-//     }
-//      val jobj = Await.result(futureuser, 5 seconds)
-//      jobj match {
-//        case x : Boolean => None
-//        case _  => Some(jobj.asInstanceOf[Token])
-//      }
-    tokens1.get(token)
+
+     val cursor  = tokens.find(Json.obj("uuid"->token)).cursor[JsObject]
+      val futureuser = cursor.headOption.map{
+        case Some(user) => user
+        case None => false
+     }
+      val jobj = Await.result(futureuser, 5 seconds)
+      jobj match {
+        case x : Boolean => None
+        case obj:JsObject  =>{
+          println(obj)
+          val uuid = ( obj \ "uuid").as[String]
+          val email = (obj \ "email").as[String]
+          val created = (obj \ "creation_time" \ "$date").as[Long]
+          val expire = (obj \ "expiration_time" \ "$date").as[Long]
+          val signup = (obj \ "isSignUp").as[Boolean]
+          val df = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")
+          Some(new Token(uuid,email,new DateTime(created),new DateTime(expire),signup))
+        }
+      }
   }
 
   def deleteToken(uuid: String) {}
