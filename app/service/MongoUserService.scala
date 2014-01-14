@@ -115,7 +115,6 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
 
 
   def findToken(token: String): Option[Token] = {
-
      val cursor  = tokens.find(Json.obj("uuid"->token)).cursor[JsObject]
       val futureuser = cursor.headOption.map{
         case Some(user) => user
@@ -137,7 +136,11 @@ class MongoUserService(application: Application) extends UserServicePlugin(appli
       }
   }
 
-  def deleteToken(uuid: String) {}
+  def deleteToken(uuid: String) {
+    tokens.remove(Json.obj("uuid" -> uuid))
+  }
 
-  def deleteExpiredTokens() {}
+  def deleteExpiredTokens() {
+    tokens.remove(Json.obj("expiration_time" -> Json.obj("$lt" -> Json.obj("$date" -> DateTime.now().getMillis))))
+  }
 }
